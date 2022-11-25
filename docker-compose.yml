@@ -1,0 +1,27 @@
+version: '3.7'
+
+services:
+  dev:
+    tty: true
+    stdin_open: true
+    container_name: ${DEV_CONTAINER_NAME}
+    image: ${DEV_IMAGE_NAME}
+    hostname: ${DEV_HOST_NAME}
+    build:
+      context: .
+      dockerfile: dockerfile
+      target: dev
+    restart: always
+    environment:
+      - IS_DEBUG=${IS_DEBUG}
+      - DEBUGGER_LISTEN_PORT:${DEBUGGER_LISTEN_PORT}
+      - APP_BIND_ADDR=${APP_BIND_ADDR}
+      - APP_LISTEN_PORT=${APP_LISTEN_PORT}
+      - IS_DOCKER=true
+    env_file:
+      - .env
+    volumes:
+      - ./src:/home/${CONTEXT}/app/src
+    ports:
+      - 3000:${APP_LISTEN_PORT}
+

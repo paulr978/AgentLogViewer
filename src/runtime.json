@@ -1,0 +1,3 @@
+{
+    "allowed_log_locations": ["/var/log"]
+}
