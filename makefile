@@ -1,6 +1,6 @@
 include .env
 
-.PHONY: clean init build run-agent
+.PHONY: clean init build run-agent test
 
 clean:
 	rm -rf node_modules
@@ -16,3 +16,6 @@ build:
 
 dev-agent:
 	docker-compose up dev
+
+test:
+	npm run test
