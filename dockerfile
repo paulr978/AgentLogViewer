@@ -21,8 +21,12 @@ WORKDIR /home/log_viewer_agent/app
 # copy dependencies
 COPY package.json ./
 COPY tsconfig.json ./
+COPY jest.config.js ./
 COPY .env ./
 RUN npm install && npm cache clean --force
+
+# change ownership of base files
+RUN chown -R log_viewer_agent:log_viewer_agent /home/log_viewer_agent
 
 # run node as our least privilege user
 USER log_viewer_agent

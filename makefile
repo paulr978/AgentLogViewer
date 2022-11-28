@@ -17,5 +17,12 @@ build:
 dev-agent:
 	docker-compose up dev
 
+local-dev-agent:
+	npm run start:dev
+
+remote-test:
+	docker-compose run --rm dev npm run test
+
 test:
 	npm run test
+

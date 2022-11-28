@@ -22,6 +22,7 @@ services:
       - .env
     volumes:
       - ./src:/home/${CONTEXT}/app/src
+      - ./test:/home/${CONTEXT}/app/test
     ports:
       - 3000:${APP_LISTEN_PORT}
 
