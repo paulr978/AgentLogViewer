@@ -1,6 +1,7 @@
 import { Application, Request, Response } from 'express';
 import { IOController } from '../controllers/io_controller';
 
+import * as fs from 'fs' 
 
 export class IORoutes {
 

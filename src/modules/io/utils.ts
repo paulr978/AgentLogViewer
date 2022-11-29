@@ -33,33 +33,30 @@ export function createTestLog(fileName: string, mbBytesLength: number) {
 
     return new Promise((resolve, reject) => {
         fs.writeFileSync(fileName, '');
-
         let fh = fs.openSync(fileName, 'a');
 
         let firstLine = '!FIRST LINE!\n';
         fs.appendFileSync(fileName, firstLine);
 
-        let current_bytes = 0;
-        let buffer = Buffer.alloc(1024 * 1024 * mbBytesLength);
+        let linesPerMB = 7892;
+        let lines: string[] = [];
         let index = 0;
-        
-        while(current_bytes < buffer.length) {
-          
-            let line = index + ' ' + [...new Array(lineLength)].map(() => 'A') + os.EOL;
-            try {
-                buffer.fill(line, current_bytes);
-                current_bytes += line.length;
 
-                index++;
-            }
-            catch(err) {
-                // its ok
+        while(index < linesPerMB * mbBytesLength) {
+            let line = index + ' ' + [...new Array(lineLength)].map(() => 'A') + os.EOL;
+            lines.push(line);
+            index++;
+
+            // flush
+            if(index % linesPerMB == 0) {
+                fs.appendFileSync(fileName, lines.join(''));
+                lines = [];
             }
         }
 
-        fs.appendFileSync(fileName, buffer.toString());
+        fs.appendFileSync(fileName, lines.join(''));
 
-        let lastLine = '\n!LAST LINE!\n';
+        let lastLine = '!LAST LINE!';
         fs.appendFileSync(fileName, lastLine);
 
         fs.closeSync(fh);
@@ -67,6 +64,3 @@ export function createTestLog(fileName: string, mbBytesLength: number) {
         resolve(true);
     });
 };
-
-  // Create a file of 1 GiB
-  //createEmptyFileOfSize('largeLogFileName', 1024*1024);

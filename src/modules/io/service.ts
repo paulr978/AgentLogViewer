@@ -54,7 +54,7 @@ class LogFileReader implements BufferedLogTailerIfc {
                         // get our file info
                         let stats = fs.fstatSync(file_fd);
                         logState.length = stats.size;
-                        logState.nextPosition = logState.length - 1;
+                        logState.nextPosition = logState.length;
                     }
                     catch(err) {
                         console.log(`Error while attaining nextPosition: ${this.file_path}`);
@@ -111,12 +111,12 @@ class LogFileReader implements BufferedLogTailerIfc {
         logState.nextPosition = Math.max(logState.nextPosition - bytesToRead, 0);
 
         /**
-         * This block of code will read from the file backwards, in bulk.
+         * This block of code will read from the file backwards, in bulk, preserving byte read precision.
          * Pass stream to pipeline for processing.
          */
         try {
             let start = logState.nextPosition;
-            let end = lastPosition;
+            let end = lastPosition - 1;
             let readStream = fs.createReadStream('', {fd: file_fd, start: start, end: end, autoClose: false});
             return pipeline.processStream(logState, readStream);
 
@@ -152,9 +152,9 @@ class LogFileReader implements BufferedLogTailerIfc {
     private firstLineRead: string | undefined;
     private lastLineRead: string | undefined;
     private line: string[];
-    private isDebug: boolean;
+
     
-    constructor(res: Response, keywordSearch?: string, matchCount?: number, isDebug?: boolean) {
+    constructor(res: Response, keywordSearch?: string, matchCount?: number) {
         this.res = res;
         this.buffer_size = runtimeConfig.read_buffer_bytes_size;
         this.lineDelimiter = runtimeConfig.default_line_delimiter.charCodeAt(0);
@@ -166,7 +166,6 @@ class LogFileReader implements BufferedLogTailerIfc {
         this.firstLineRead = undefined;
         this.lastLineRead = undefined;
         this.line = [];
-        this.isDebug = isDebug || false;
 
         // add event listener to resume reading after draining response.
         res.on('drain', () => {
@@ -205,42 +204,46 @@ class LogFileReader implements BufferedLogTailerIfc {
      * @returns nothing
      */
     flush(readStream: fs.ReadStream, lines: string[]) {
-        let toWrite = lines.toString();
 
-        if(this.keywordSearch) {
-            // we are using keyword search, but ours isn't found in the line
-            // or, we met our match count limit
-            if(!toWrite.includes(this.keywordSearch) || this.isMetMatchesCount()) {
-                return;
+        for(let toWrite of lines) {
+            
+            if(this.keywordSearch) {
+                // we are using keyword search, but ours isn't found in the line
+                // or, we met our match count limit
+                if(!toWrite.includes(this.keywordSearch) || this.isMetMatchesCount()) {
+                    continue;
+                }
+    
+                // we increment our matches counted state
+                if(this.matchCount && toWrite.includes(this.keywordSearch)) {
+                    this.matchesCounted++;
+                }
             }
 
-            // we increment our matches counted state
-            if(this.matchCount && toWrite.includes(this.keywordSearch)) {
-                this.matchesCounted++;
+            // used for ease of testing purposes in this instance
+            if(isDebug) {
+                let trimmed = toWrite.trim()
+                if(trimmed.length > 0 && typeof this.firstLineRead == 'undefined') {
+                    this.firstLineRead = toWrite.trim();
+                }
+                if(trimmed.length > 0) {
+                    this.lastLineRead = toWrite.trim();
+                }
+            }
+    
+            let result = this.res.write(toWrite);
+    
+            // is the client not accepting (meaning, backpressure) lets pause and try again
+            if(!result) {
+                readStream.pause();
+                
+                setTimeout(() => {
+                    readStream.resume();
+                }, 1000);
+                
             }
         }
 
-        // used for ease of testing purposes in this instance
-        if(this.isDebug && typeof this.firstLineRead == 'undefined') {
-            this.firstLineRead = toWrite.trimEnd();
-        }
-
-        // used for ease of testing purposes in this instance
-        if(this.isDebug) {
-            this.lastLineRead = toWrite.trimEnd();
-        }
-
-        let result = this.res.write(toWrite);
-
-        // is the client not accepting (meaning, backpressure) lets pause and try again
-        if(!result) {
-            readStream.pause();
-            
-            setTimeout(() => {
-                readStream.resume();
-            }, 1000);
-            
-        }
     }
 
     isStreamsEnded() {

@@ -29,8 +29,8 @@ export class IOController {
      */
     public tailLog(req: Request, res: Response) {
         let fileName = req.query.fileName;
-        let keywordSearch = req.query.keywordSearch;
-        let matchCountArg = req.query.matchCount;
+        let keywordSearch = req.query.search;
+        let matchCountArg = req.query.count;
         let matchCount;
         
         // required
