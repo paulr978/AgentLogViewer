@@ -1,10 +1,11 @@
 import runtimeConfig from '../../runtime.json';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { BufferedLogTailerIfc, ExtractorPipelineIfc, LogFileReadState } from './model'
 import * as fs from 'fs' 
 import { getLogFiles } from './utils';
 import { HTTP_RESPONSE_STATUS } from 'modules/common/model';
 import { isDebug } from '../../core/app';
+import axios, { isCancel, AxiosError } from 'axios';
 
 
 /**
@@ -142,7 +143,9 @@ class LogFileReader implements BufferedLogTailerIfc {
  export class HttpExtractorPipeline implements ExtractorPipelineIfc {
     public buffer_size: number;
     
+    private req: Request;
     private res: Response;
+    private fileName: string;
     private lineDelimiter: number;
     private readStream: fs.ReadStream | undefined;
     private streams: Array<fs.ReadStream>;
@@ -152,10 +155,13 @@ class LogFileReader implements BufferedLogTailerIfc {
     private firstLineRead: string | undefined;
     private lastLineRead: string | undefined;
     private line: string[];
+    private isDisableHops: boolean | undefined;
 
     
-    constructor(res: Response, keywordSearch?: string, matchCount?: number) {
+    constructor(req: Request, res: Response, fileName: string, keywordSearch?: string, matchCount?: number, isDisableHops?: boolean) {
+        this.req = req;
         this.res = res;
+        this.fileName = fileName;
         this.buffer_size = runtimeConfig.read_buffer_bytes_size;
         this.lineDelimiter = runtimeConfig.default_line_delimiter.charCodeAt(0);
         this.readStream = undefined;
@@ -166,6 +172,7 @@ class LogFileReader implements BufferedLogTailerIfc {
         this.firstLineRead = undefined;
         this.lastLineRead = undefined;
         this.line = [];
+        this.isDisableHops = isDisableHops;
 
         // add event listener to resume reading after draining response.
         res.on('drain', () => {
@@ -183,8 +190,71 @@ class LogFileReader implements BufferedLogTailerIfc {
         return this.lastLineRead;
     }
 
-    onCompleted() {
+    /**
+     * Handles proxy pipe to secondary servers serially.
+     * todo: could be improved performance-wise.
+     */
+    async processSecondaryServers() {
+        let hopCount: number;
+
+        try {
+            hopCount = Number(this.req.headers['x-hop']) || 0;
+        }
+        catch(err) {
+            hopCount = 0;
+        }
+        
+        console.log('hopCount', hopCount);
+
+        // bail out if hopCount is neg or beyond our threshold
+        if(hopCount == -1 || hopCount >= runtimeConfig.maxHops) {
+            console.log('leaving!');
+            return;
+        }
+
+        // increment our hop
+        hopCount++;
+
+        for(let serverUrl of runtimeConfig.secondaryServerUrls) {
+            let myUrl = `${serverUrl}/log/tail?fileName=${this.fileName}`;
+
+            if(this.keywordSearch) {
+                myUrl += `&search=${this.keywordSearch}`;
+            }
+
+            if(this.matchCount) {
+                myUrl += `&count=${this.matchCount}`;
+            }
+
+            try {
+                const response = await axios({ 
+                    method: 'get',
+                    timeout: runtimeConfig.hopTimeout,
+                    decompress: false,
+                    url: myUrl,
+                    headers: { 'x-hop': hopCount } 
+                });
+
+                this.res.write(`\nHostUrl: ${myUrl}`);
+                this.res.write(response.data);
+
+            }
+            catch(err) {
+                console.error('failure', err);
+                this.res.write(`\nFailure communicating with host: ${myUrl}. See log for details.\n`);
+            }
+        }
+    }
+
+    async onCompleted() {
         if(this.isStreamsEnded()) {
+
+            // send requests to secondary servers to collect logs
+            if(!this.isDisableHops) {
+                await this.processSecondaryServers();
+            }
+            
+            //console.log('completed');
             this.res.end();
         }
     }

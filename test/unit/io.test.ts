@@ -32,6 +32,7 @@ jest.mock("fs", () => ({
   }])
 }));
 
+
 import {describe, expect, test} from '@jest/globals';
 import { Readable } from 'stream';
 import * as fs from 'fs' 
@@ -44,9 +45,10 @@ test('test log tail & head', async () => {
   let logData = fs.readFileSync('__FAKE__', 'utf8');
   let logDataLines = logData.split('\n');
 
+  const req = getMockReq()
   const { res } = getMockRes();
 
-  let pipeline = new io.HttpExtractorPipeline(res, undefined, undefined);
+  let pipeline = new io.HttpExtractorPipeline(req, res, '__FAKE__', undefined, undefined, true);
 
   await io.readLogFileTailed('__FAKE__', pipeline);
 

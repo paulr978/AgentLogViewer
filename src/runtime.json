@@ -3,7 +3,8 @@
     "read_buffer_bytes_size": 65536,
     "default_line_delimiter": "\n",
     "secondaryServerUrls": [
-        "http://localhost:3001",
-        "http://localhost:3002"
-    ]
+
+    ],
+    "maxHops": 1,
+    "hopTimeout": 30000
 }

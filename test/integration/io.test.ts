@@ -1,7 +1,8 @@
 import {describe, expect, test} from '@jest/globals';
 import * as utils from '../../src/modules/io/utils';
 import * as fs from 'fs' 
-import * as axios from 'axios';
+import axios, { isCancel, AxiosError } from 'axios';
+
 
 
 let logFileName = 'test/test_1mb.log';
@@ -16,7 +17,7 @@ beforeAll(() => {
 
 
 test('test log list', async () => {
-  const response = await axios.default.get('http://localhost:3000/logs/list');
+  const response = await axios.get('http://localhost:3000/logs/list');
   let logsList = response.data.data;
 
   expect(logsList.length).toBeGreaterThan(0);
@@ -24,7 +25,15 @@ test('test log list', async () => {
 });
 
 test('test 1mb log read', async () => {
-  const response = await axios.default.get(`http://localhost:3000/log/tail?fileName=${logFileName}`);
+  const response = await axios({ 
+    method: 'get',
+    decompress: false,
+    params: {
+      fileName: logFileName
+    },
+    url: `http://localhost:3000/log/tail`,
+    headers: { 'x-hop': -1 } 
+  });
 
   let lines = response.data.split('\n');
 
@@ -41,7 +50,16 @@ test('test 1mb log read', async () => {
 
 test('test keyword log read', async () => {
   let keyword = '777';
-  const response = await axios.default.get(`http://localhost:3000/log/tail?fileName=${logFileName}&search=${keyword}`);
+  const response = await axios({ 
+    method: 'get',
+    decompress: false,
+    params: {
+      fileName: logFileName,
+      search: keyword
+    },
+    url: `http://localhost:3000/log/tail`,
+    headers: { 'x-hop': -1 } 
+  });
 
   let lines: string[] = response.data.split('\n');
 
@@ -55,7 +73,17 @@ test('test keyword log read', async () => {
 test('test keyword log read + count', async () => {
   let keyword = '777';
   let count = 5;
-  const response = await axios.default.get(`http://localhost:3000/log/tail?fileName=${logFileName}&search=${keyword}&count=${count}`);
+  const response = await axios({ 
+    method: 'get',
+    decompress: false,
+    params: {
+      fileName: logFileName,
+      search: keyword,
+      count: count
+    },
+    url: `http://localhost:3000/log/tail`,
+    headers: { 'x-hop': -1 } 
+  });
 
   let lines: string[] = response.data.split('\n');
 
@@ -63,5 +91,34 @@ test('test keyword log read + count', async () => {
   let actualCount = lines.filter(line => line.includes(keyword)).length;
 
   expect(actualCount).toEqual(count);
+
+});
+
+/**
+ * Evaluates the inside contents of the log that was buffered, to ensure byte precision
+ */
+test('test thorough log read', async () => {
+  const response = await axios({ 
+    method: 'get',
+    decompress: false,
+    params: {
+      fileName: logFileName,
+    },
+    url: `http://localhost:3000/log/tail`,
+    headers: { 'x-hop': -1 } 
+  });
+
+  let lines: string[] = response.data.split('\n');
+
+  var expectedLines = sourceLogLines.filter(line => line.trim().length > 0 && (!line.includes('FIRST') || !line.includes('LAST')));
+  let actualLines = lines.filter(line => line.trim().length > 0 && (!line.includes('FIRST') || !line.includes('LAST')));
+
+  expect(actualLines.length).toEqual(expectedLines.length);
+
+  for(let i = 0; i < expectedLines.length; i++) {
+    let t = expectedLines.length - 1 - i;
+
+    expect(actualLines[t]).toBe(expectedLines[i]);
+  }
 
 });

@@ -27,7 +27,7 @@ export class IOController {
      * @param req Request
      * @param res Response
      */
-    public tailLog(req: Request, res: Response) {
+    public async tailLog(req: Request, res: Response) {
         let fileName = req.query.fileName;
         let keywordSearch = req.query.search;
         let matchCountArg = req.query.count;
@@ -55,6 +55,6 @@ export class IOController {
             throw new Error(`Invalid log file specified: ${myFileName}`);
         }
 
-        readLogFileTailed(myFileName, new HttpExtractorPipeline(res, keywordSearch, matchCount));
+        readLogFileTailed(myFileName, new HttpExtractorPipeline(req, res, myFileName, keywordSearch, matchCount));
     }
 }
