@@ -16,16 +16,12 @@ import { isDebug } from '../../core/app';
  * Constructor may throw an exception if file is invalid.
  */
 class LogFileReader implements BufferedLogTailerIfc {
-    public static MAX_READ_BYTES_SIZE: number = 512000;
+    public static MAX_READ_BYTES_SIZE: number = 5120000;
 
     private file_path: fs.PathLike;
     
-    // private variables
-    private line_delimiter: string | undefined;
-
     constructor(file_path: fs.PathLike) {
         this.file_path = file_path;
-        this.line_delimiter = runtimeConfig.default_line_delimiter;
     }
 
     /**
@@ -58,16 +54,14 @@ class LogFileReader implements BufferedLogTailerIfc {
                         // get our file info
                         let stats = fs.fstatSync(file_fd);
                         logState.length = stats.size;
-                        logState.nextPosition = logState.length;
+                        logState.nextPosition = logState.length - 1;
                     }
                     catch(err) {
                         console.log(`Error while attaining nextPosition: ${this.file_path}`);
                         throw err;
                     }
                 }
-
-                logState = await this._tailLineByChunk(logState, file_fd, pipeline, logState.nextPosition);
-
+                await this._tailLineByChunk(logState, file_fd, pipeline);
                 // finished reading
                 if(logState.isReachedBeginning() || logState.isMetMatchesCount) {
                     break;
@@ -104,31 +98,17 @@ class LogFileReader implements BufferedLogTailerIfc {
      * @param keywordSearch
      * @param matchCount
      */
-    async _tailLineByChunk(logState: LogFileReadState, file_fd: number, pipeline: ExtractorPipelineIfc, lastPosition: number) {
+    _tailLineByChunk(logState: LogFileReadState, file_fd: number, pipeline: ExtractorPipelineIfc) {
 
         let bytesToRead = -1;
-        let nextPosition = lastPosition;
-
-        // position is unknown, for instance, we may be reading this file as the first iteration in a series.
-        // let's get the size of this file and set our position accordingly.
-        if(nextPosition == -1) {
-            try {
-                // get our file info
-                let stats = fs.fstatSync(file_fd);
-                let length = stats.size;
-                nextPosition = length;
-            }
-            catch(err) {
-                throw err;
-            }
-        }
+        let lastPosition = logState.nextPosition;
 
         // determine how many bytes we will read from this file (honoring max)
         bytesToRead = Math.min(pipeline.buffer_size, LogFileReader.MAX_READ_BYTES_SIZE);
 
         // determine our seek position. Must be >= 0. Since we are tailing, we will evaluate position starting
         // from the length of the file and work our way backwards while considering our bytesToRead.
-        logState.nextPosition = Math.max(nextPosition - bytesToRead, 0);
+        logState.nextPosition = Math.max(logState.nextPosition - bytesToRead, 0);
 
         /**
          * This block of code will read from the file backwards, in bulk.
@@ -136,9 +116,8 @@ class LogFileReader implements BufferedLogTailerIfc {
          */
         try {
             let start = logState.nextPosition;
-            let end = logState.nextPosition + bytesToRead;
+            let end = lastPosition;
             let readStream = fs.createReadStream('', {fd: file_fd, start: start, end: end, autoClose: false});
-
             return pipeline.processStream(logState, readStream);
 
         }
@@ -165,7 +144,6 @@ class LogFileReader implements BufferedLogTailerIfc {
     
     private res: Response;
     private lineDelimiter: number;
-    private pending: Array<number>;
     private readStream: fs.ReadStream | undefined;
     private streams: Array<fs.ReadStream>;
     private keywordSearch: string | undefined;
@@ -173,13 +151,13 @@ class LogFileReader implements BufferedLogTailerIfc {
     private matchesCounted: number;
     private firstLineRead: string | undefined;
     private lastLineRead: string | undefined;
+    private line: string[];
     private isDebug: boolean;
     
     constructor(res: Response, keywordSearch?: string, matchCount?: number, isDebug?: boolean) {
         this.res = res;
         this.buffer_size = runtimeConfig.read_buffer_bytes_size;
         this.lineDelimiter = runtimeConfig.default_line_delimiter.charCodeAt(0);
-        this.pending = [];
         this.readStream = undefined;
         this.streams = [];
         this.keywordSearch = keywordSearch;
@@ -187,6 +165,7 @@ class LogFileReader implements BufferedLogTailerIfc {
         this.matchesCounted = 0;
         this.firstLineRead = undefined;
         this.lastLineRead = undefined;
+        this.line = [];
         this.isDebug = isDebug || false;
 
         // add event listener to resume reading after draining response.
@@ -225,9 +204,8 @@ class LogFileReader implements BufferedLogTailerIfc {
      * @param readStream 
      * @returns nothing
      */
-    flush(readStream: fs.ReadStream) {
-        let pending = this.pending.splice(0);
-        let toWrite = String.fromCharCode(...pending.reverse());
+    flush(readStream: fs.ReadStream, lines: string[]) {
+        let toWrite = lines.toString();
 
         if(this.keywordSearch) {
             // we are using keyword search, but ours isn't found in the line
@@ -270,25 +248,33 @@ class LogFileReader implements BufferedLogTailerIfc {
         return isStreamsEnded;
     }
 
-    processStream(logState: LogFileReadState, readStream: fs.ReadStream, keywordSearch?: String, matchCount?: number): Promise<LogFileReadState> {
+    processStream(logState: LogFileReadState, readStream: fs.ReadStream): Promise<number> {
         let me = this;
         this.readStream = readStream;
 
         return new Promise((resolve, reject) => {
+            let lines: string[] = [];
+            let bytesRead = 0;
+
             readStream.on('data', function (chunk: Array<number>) {
                 // this is our logic where we crawl backwards byte-by-byte to find
                 // our carriage returns and group by lines
                 // this offers us ability to reverse the log and see the bottom-up (first)
+
                 for(var i = chunk.length - 1; i >= 0; i--) {
+                    
                     let charCode = chunk.at(i);
 
-                    if(charCode == me.lineDelimiter) {
-                        me.flush(readStream);
+                    if(charCode) {
+                        me.line.push(String.fromCharCode(charCode));
+                        bytesRead++;
+
+                        if(charCode == me.lineDelimiter) {
+                            lines.push(me.line.reverse().join(''));
+                            me.line = [];
+                        }
                     }
 
-                    if(charCode) {
-                        me.pending.push(charCode);
-                    }
                 }
             });
 
@@ -297,11 +283,17 @@ class LogFileReader implements BufferedLogTailerIfc {
             // resolve our promise to inform consumer to continue the read
             // this helps us keep the results in order
             readStream.on('end', function() {
-                me.flush(readStream);
+
+                // if we are at the beginning, lets empty our line variable
+                if(logState.nextPosition == 0 && me.line.length > 0) {
+                    lines.push(String.fromCharCode(me.lineDelimiter) + me.line.reverse().join(''));
+                }
+
+                me.flush(readStream, lines);
 
                 logState.isMetMatchesCount = me.isMetMatchesCount();
             
-                resolve(logState)
+                resolve(bytesRead);
             });
         });
 

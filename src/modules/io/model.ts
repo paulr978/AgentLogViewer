@@ -3,7 +3,7 @@ import { ReadStream } from "fs";
 export interface ExtractorPipelineIfc {
     buffer_size: number;
     
-    processStream(logState: LogFileReadState, readStream: ReadStream): Promise<LogFileReadState>;
+    processStream(logState: LogFileReadState, readStream: ReadStream): Promise<number>;
     onFailure(error: any): void;
     onCompleted(): void;
 }

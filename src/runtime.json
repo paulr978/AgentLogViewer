@@ -1,6 +1,6 @@
 {
     "allowed_log_locations": ["/var/log"],
-    "read_buffer_bytes_size": 8192,
+    "read_buffer_bytes_size": 65536,
     "default_line_delimiter": "\n",
     "secondaryServerUrls": [
         "http://localhost:3001",
