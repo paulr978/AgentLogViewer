@@ -87,8 +87,28 @@ test('test keyword log read + count', async () => {
 
   let lines: string[] = response.data.split('\n');
 
-  var expectedCount = sourceLogLines.filter(line => line.includes(keyword)).length;
-  let actualCount = lines.filter(line => line.includes(keyword)).length;
+  let actualCount = lines.filter(line => line.trim()).length;
+
+  expect(actualCount).toEqual(count);
+
+});
+
+test('test log read + count', async () => {
+  let count = 5;
+  const response = await axios({ 
+    method: 'get',
+    decompress: false,
+    params: {
+      fileName: logFileName,
+      count: count
+    },
+    url: `http://localhost:3000/log/tail`,
+    headers: { 'x-hop': -1 } 
+  });
+
+  let lines: string[] = response.data.split('\n');
+
+  let actualCount = lines.filter(line => line.trim()).length;
 
   expect(actualCount).toEqual(count);
 

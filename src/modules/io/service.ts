@@ -204,11 +204,8 @@ class LogFileReader implements BufferedLogTailerIfc {
             hopCount = 0;
         }
         
-        console.log('hopCount', hopCount);
-
         // bail out if hopCount is neg or beyond our threshold
         if(hopCount == -1 || hopCount >= runtimeConfig.maxHops) {
-            console.log('leaving!');
             return;
         }
 
@@ -285,9 +282,18 @@ class LogFileReader implements BufferedLogTailerIfc {
                 }
     
                 // we increment our matches counted state
-                if(this.matchCount && toWrite.includes(this.keywordSearch)) {
+                if(toWrite.includes(this.keywordSearch)) {
                     this.matchesCounted++;
                 }
+            }
+            else if(this.matchCount) {
+                // we met our match count limit
+                if(this.isMetMatchesCount()) {
+                    continue;
+                }
+
+                // we have no keyword search, so every line is considered a match
+                this.matchesCounted++;
             }
 
             // used for ease of testing purposes in this instance
